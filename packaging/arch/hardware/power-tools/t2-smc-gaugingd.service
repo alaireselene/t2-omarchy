@@ -1,0 +1,13 @@
+[Unit]
+Description=KAIT2EN battery gauge calibration
+After=systemd-modules-load.service
+ConditionPathExists=/sys/module/t2smc
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/t2-smc-control --daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

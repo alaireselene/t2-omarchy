@@ -1,0 +1,36 @@
+pkgbase=kait2en-hardware-dkms
+pkgname=('kait2en-battery-dkms' 'kait2en-gmux-dkms')
+pkgver=20261108
+pkgrel=1
+arch=('any')
+url='https://github.com/kaiT2en/KaiT2en-Fedora'
+license=('GPL-2.0-only')
+depends=('dkms')
+makedepends=('git')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160')
+sha256sums=('SKIP')
+
+_install_module() {
+  local name=$1 make_args=$2
+  local dest="$pkgdir/usr/src/$name-$pkgver"
+  install -d "$dest"
+  install -m644 "$srcdir/kait2en/modules/$name/"*.c "$srcdir/kait2en/modules/$name/Makefile" "$dest/"
+  if [[ $name == t2sbs ]]; then
+    install -m644 "$srcdir/kait2en/modules/$name/sbshc.h" "$dest/"
+  fi
+  printf 'PACKAGE_NAME="%s"\nPACKAGE_VERSION="%s"\nMAKE[0]="make %s"\nBUILT_MODULE_NAME[0]="%s"\nDEST_MODULE_LOCATION[0]="/updates/dkms"\nAUTOINSTALL="yes"\n' \
+    "$name" "$pkgver" "$make_args" "$name" > "$dest/dkms.conf"
+}
+
+package_kait2en-battery-dkms() {
+  pkgdesc='KAIT2EN SMC and corrected smart battery drivers (not automatically activated)'
+  _install_module t2smc 'KERNEL_SRC=/lib/modules/${kernelver}/build KERNEL_RELEASE=${kernelver}'
+  _install_module t2sbs 'KDIR=/lib/modules/${kernelver}/build KVER=${kernelver}'
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+}
+
+package_kait2en-gmux-dkms() {
+  pkgdesc='KAIT2EN T2 GMUX driver (requires coordinated patched AMDGPU activation)'
+  _install_module t2gmux 'KDIR=/lib/modules/${kernelver}/build KVER=${kernelver}'
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+}

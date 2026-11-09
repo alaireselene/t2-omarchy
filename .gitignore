@@ -37,3 +37,16 @@ compile_commands.json
 /website/build/
 /tmp
 /temp
+
+# Arch package builds and machine-local trial inputs
+*.pkg.tar.*
+/dsp/packaging/pkg/
+/dsp/packaging/src/
+/dsp/packaging/kait2en/
+/packaging/arch/**/pkg/
+/packaging/arch/**/src/
+/packaging/arch/**/kait2en/
+/packaging/arch/bankstown/bankstown/
+/packaging/arch/hardware/cold-trial/inputs.json
+/packaging/arch/hardware/cold-trial/limine.conf
+/packaging/arch/hardware/cold-trial/image-file-list.txt

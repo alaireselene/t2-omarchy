@@ -1,0 +1,992 @@
+From: KAIT2EN upstream contributors
+Subject: KAIT2EN GMUX runtime PM and MacBookPro16,1 GPU fixes for Linux 7.2.11
+
+Derived from KaiT2en-Fedora cf64a1fcee7cfb790c74847c8356965aa42e2160.
+Port adjustments: fini_sw local variable context, dmi include context, external-module trace path.
+Original copyrights and licenses apply; see upstream-patches/.
+
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu.h
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu.h
+@@ -1084,6 +1084,8 @@
+ 	/* enable runtime pm on the device */
+ 	bool                            in_runpm;
+ 	bool                            has_pr3;
++	/* GMUX has cut power, any register access would hang the PEG link */
++	bool                            gmux_off;
+ 
+ 	bool                            ucode_sysfs_en;
+ 
+@@ -1405,6 +1407,8 @@
+ int amdgpu_device_link_reset(struct amdgpu_device *adev);
+ bool amdgpu_device_supports_atpx(struct amdgpu_device *adev);
+ bool amdgpu_device_supports_px(struct amdgpu_device *adev);
++bool amdgpu_device_supports_gmux(struct amdgpu_device *adev);
++bool amdgpu_device_has_gmux_edp(struct amdgpu_device *adev);
+ bool amdgpu_device_supports_boco(struct amdgpu_device *adev);
+ bool amdgpu_device_supports_smart_shift(struct amdgpu_device *adev);
+ int amdgpu_device_supports_baco(struct amdgpu_device *adev);
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+@@ -34,6 +34,7 @@
+ #include <linux/slab.h>
+ #include <linux/iommu.h>
+ #include <linux/pci.h>
++#include <linux/dmi.h>
+ #include <linux/pci-p2pdma.h>
+ #include <linux/apple-gmux.h>
+ #include <linux/nospec.h>
+@@ -568,6 +569,45 @@
+ 	return false;
+ }
+ 
++static const struct dmi_system_id amdgpu_gmux_runpm_dmi_table[] = {
++	{
++		.matches = {
++			DMI_MATCH(DMI_PRODUCT_NAME, "MacBookPro15,1"),
++		},
++	},
++	{
++		.matches = {
++			DMI_MATCH(DMI_PRODUCT_NAME, "MacBookPro15,3"),
++		},
++	},
++	{
++		.matches = {
++			DMI_MATCH(DMI_PRODUCT_NAME, "MacBookPro16,1"),
++		},
++	},
++	{
++		.matches = {
++			DMI_MATCH(DMI_PRODUCT_NAME, "MacBookPro16,4"),
++		},
++	},
++	{ }
++};
++
++bool amdgpu_device_supports_gmux(struct amdgpu_device *adev)
++{
++	return dmi_check_system(amdgpu_gmux_runpm_dmi_table) &&
++	       !dev_is_removable(&adev->pdev->dev) &&
++	       apple_gmux_detect(NULL, NULL);
++}
++
++bool amdgpu_device_has_gmux_edp(struct amdgpu_device *adev)
++{
++	return amdgpu_device_supports_gmux(adev) &&
++	       (dmi_match(DMI_PRODUCT_NAME, "MacBookPro15,3") ||
++		dmi_match(DMI_PRODUCT_NAME, "MacBookPro16,1") ||
++		dmi_match(DMI_PRODUCT_NAME, "MacBookPro16,4"));
++}
++
+ /**
+  * amdgpu_device_supports_boco - Is the device a dGPU with ACPI power resources
+  *
+@@ -638,6 +678,9 @@
+ 			/* enable PX as runtime mode */
+ 			adev->pm.rpm_mode = AMDGPU_RUNPM_PX;
+ 			dev_info(adev->dev, "Using ATPX for runtime pm\n");
++		} else if (amdgpu_device_supports_gmux(adev)) {
++			adev->pm.rpm_mode = AMDGPU_RUNPM_GMUX;
++			dev_info(adev->dev, "Using Apple GMUX for runtime pm\n");
+ 		} else if (amdgpu_device_supports_boco(adev)) {
+ 			/* enable boco as runtime mode */
+ 			adev->pm.rpm_mode = AMDGPU_RUNPM_BOCO;
+@@ -900,6 +943,16 @@
+ {
+ 	if (adev->no_hw_access)
+ 		return true;
++
++	/*
++	 * Like PANIC_ON_POWEROFF_REGISTER_ACCESS in AMDRadeonX6000, catch
++	 * register accesses while GMUX keeps the GPU powered off.
++	 */
++	if (unlikely(READ_ONCE(adev->gmux_off))) {
++		WARN_RATELIMIT(1, "%s: register access while powered off by GMUX\n",
++			       dev_name(adev->dev));
++		return true;
++	}
+ 
+ #ifdef CONFIG_LOCKDEP
+ 	/*
+@@ -3857,7 +3910,7 @@
+ {
+ 	struct pci_dev *pdev = adev->pdev;
+ 	int r, i;
+-	bool px = false;
++	bool gmux, px = false;
+ 	u32 max_MBps;
+ 	int tmp;
+ 
+@@ -4291,12 +4344,13 @@
+ 		vga_client_register(adev->pdev, amdgpu_device_vga_set_decode);
+ 
+ 	px = amdgpu_device_supports_px(adev);
++	gmux = amdgpu_device_supports_gmux(adev);
+ 
+ 	if (amdgpu_device_should_register_switcheroo(adev, px))
+ 		vga_switcheroo_register_client(adev->pdev,
+-					       &amdgpu_switcheroo_ops, px);
+-
+-	if (px)
++					       &amdgpu_switcheroo_ops, px || gmux);
++
++	if (px || gmux)
+ 		vga_switcheroo_init_domain_pm_ops(adev->dev, &adev->vga_pm_domain);
+ 
+ 	adev->pm_nb.notifier_call = amdgpu_device_pm_notifier;
+@@ -4424,7 +4478,7 @@
+ void amdgpu_device_fini_sw(struct amdgpu_device *adev)
+ {
+ 	int i;
+-	bool px;
++	bool gmux, px;
+ 
+ 	amdgpu_device_ip_fini(adev);
+ 	amdgpu_fence_driver_sw_fini(adev);
+@@ -4455,11 +4509,12 @@
+ 	adev->xcp_mgr = NULL;
+ 
+ 	px = amdgpu_device_supports_px(adev);
++	gmux = amdgpu_device_supports_gmux(adev);
+ 
+ 	if (amdgpu_device_should_register_switcheroo(adev, px))
+ 		vga_switcheroo_unregister_client(adev->pdev);
+ 
+-	if (px)
++	if (px || gmux)
+ 		vga_switcheroo_fini_domain_pm_ops(adev->dev);
+ 
+ 	if ((adev->pdev->class >> 8) == PCI_CLASS_DISPLAY_VGA)
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c
+@@ -21,6 +21,7 @@
+  *
+  */
+ 
++#include <linux/dmi.h>
+ #include <linux/firmware.h>
+ 
+ #include "amdgpu.h"
+@@ -2840,6 +2841,22 @@
+ 	return 0;
+ }
+ 
++static const struct dmi_system_id imac5k_table[] = {
++	{
++		.matches = {
++			 DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
++			 DMI_MATCH(DMI_PRODUCT_NAME, "iMac20,1"),
++		},
++	},
++	{
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
++			DMI_MATCH(DMI_PRODUCT_NAME, "iMac20,2"),
++		},
++	},
++	{}
++};
++
+ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
+ {
+ 	int r;
+@@ -3437,15 +3454,23 @@
+ 		}
+ 	}
+ 
++	if (dmi_check_system(imac5k_table)) {
++		r = amdgpu_discovery_set_display_ip_blocks(adev);
++		if (r)
++			return r;
++	}
++
+ 	if (likely(adev->firmware.load_type == AMDGPU_FW_LOAD_PSP)) {
+ 		r = amdgpu_discovery_set_smu_ip_blocks(adev);
+ 		if (r)
+ 			return r;
+ 	}
+ 
+-	r = amdgpu_discovery_set_display_ip_blocks(adev);
+-	if (r)
+-		return r;
++	if (!dmi_check_system(imac5k_table)) {
++		r = amdgpu_discovery_set_display_ip_blocks(adev);
++		if (r)
++			return r;
++	}
+ 
+ 	r = amdgpu_discovery_set_gc_ip_blocks(adev);
+ 	if (r)
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c
+@@ -2485,11 +2485,12 @@
+ 		DRM_ERROR("Creating debugfs files failed (%d).\n", ret);
+ 
+ 	if (adev->pm.rpm_mode != AMDGPU_RUNPM_NONE) {
+-		/* only need to skip on ATPX */
++		/* ATPX requires a full system-sleep transition. */
+ 		if (amdgpu_device_supports_px(adev))
+ 			dev_pm_set_driver_flags(ddev->dev, DPM_FLAG_NO_DIRECT_COMPLETE);
+-		/* we want direct complete for BOCO */
+-		if (amdgpu_device_supports_boco(adev))
++		/* BOCO and GMUX can remain runtime suspended across system sleep. */
++		if (amdgpu_device_supports_boco(adev) ||
++		    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 			dev_pm_set_driver_flags(ddev->dev, DPM_FLAG_SMART_PREPARE |
+ 						DPM_FLAG_SMART_SUSPEND |
+ 						DPM_FLAG_MAY_SKIP_RESUME);
+@@ -2599,7 +2600,9 @@
+ 	/* Return a positive number here so
+ 	 * DPM_FLAG_SMART_SUSPEND works properly
+ 	 */
+-	if (amdgpu_device_supports_boco(adev) && pm_runtime_suspended(dev))
++	if ((amdgpu_device_supports_boco(adev) ||
++	     adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX) &&
++	    pm_runtime_suspended(dev))
+ 		return 1;
+ 
+ 	/* if we will not support s3 or s2i for the device
+@@ -2869,6 +2872,7 @@
+ 	}
+ 
+ 	adev->in_runpm = true;
++	/* GMUX dGPUs drive displays, so hotplug handlers may reopen them. */
+ 	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX)
+ 		drm_dev->switch_power_state = DRM_SWITCH_POWER_CHANGING;
+ 
+@@ -2879,7 +2883,8 @@
+ 	 * platforms.
+ 	 * TODO: this may be also needed for PX capable platform.
+ 	 */
+-	if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO)
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO ||
++	    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 		adev->mp1_state = PP_MP1_STATE_UNLOAD;
+ 
+ 	ret = amdgpu_device_prepare(drm_dev);
+@@ -2888,16 +2893,19 @@
+ 	ret = amdgpu_device_suspend(drm_dev, false);
+ 	if (ret) {
+ 		adev->in_runpm = false;
+-		if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO)
++		if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO ||
++		    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 			adev->mp1_state = PP_MP1_STATE_NONE;
+ 		return ret;
+ 	}
+ 
+-	if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO)
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_BOCO ||
++	    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 		adev->mp1_state = PP_MP1_STATE_NONE;
+ 
+-	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX) {
+-		/* Only need to handle PCI state in the driver for ATPX
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX ||
++	    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX) {
++		/* Only need to handle PCI state in the driver for ATPX and GMUX.
+ 		 * PCI core handles it for _PR3.
+ 		 */
+ 		amdgpu_device_cache_pci_state(pdev);
+@@ -2912,6 +2920,9 @@
+ 		amdgpu_device_baco_enter(adev);
+ 	}
+ 
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
++		WRITE_ONCE(adev->gmux_off, true);
++
+ 	dev_dbg(&pdev->dev, "asic/device is runtime suspended\n");
+ 
+ 	return 0;
+@@ -2940,14 +2951,18 @@
+ 	if (adev->pm.rpm_mode == AMDGPU_RUNPM_NONE)
+ 		return -EINVAL;
+ 
++	WRITE_ONCE(adev->gmux_off, false);
++
+ 	/* Avoids registers access if device is physically gone */
+ 	if (!pci_device_is_present(adev->pdev))
+ 		adev->no_hw_access = true;
+ 
+-	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX) {
+-		drm_dev->switch_power_state = DRM_SWITCH_POWER_CHANGING;
+-
+-		/* Only need to handle PCI state in the driver for ATPX
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX ||
++	    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX) {
++		if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX)
++			drm_dev->switch_power_state = DRM_SWITCH_POWER_CHANGING;
++
++		/* Only need to handle PCI state in the driver for ATPX and GMUX.
+ 		 * PCI core handles it for _PR3.
+ 		 */
+ 		pci_set_power_state(pdev, PCI_D0);
+@@ -2967,12 +2982,14 @@
+ 	}
+ 	ret = amdgpu_device_resume(drm_dev, false);
+ 	if (ret) {
+-		if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX)
++		if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX ||
++		    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 			pci_disable_device(pdev);
+ 		return ret;
+ 	}
+ 
+-	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX)
++	if (adev->pm.rpm_mode == AMDGPU_RUNPM_PX ||
++	    adev->pm.rpm_mode == AMDGPU_RUNPM_GMUX)
+ 		drm_dev->switch_power_state = DRM_SWITCH_POWER_ON;
+ 
+ 	amdgpu_restore_umd_profile_pstate_after_runpm(adev);
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_reg_access.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_reg_access.c
+@@ -594,6 +594,9 @@
+ 	void __iomem *pcie_data_offset;
+ 	u32 r;
+ 
++	if (amdgpu_device_skip_hw_access(adev))
++		return 0;
++
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+ 
+@@ -677,6 +680,9 @@
+ 	void __iomem *pcie_data_offset;
+ 	u64 r;
+ 
++	if (amdgpu_device_skip_hw_access(adev))
++		return 0;
++
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+ 
+@@ -706,6 +712,9 @@
+ 	void __iomem *pcie_data_offset;
+ 	u64 r;
+ 
++	if (amdgpu_device_skip_hw_access(adev))
++		return 0;
++
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+ 	if ((reg_addr >> 32) && (adev->nbio.funcs->get_pcie_index_hi_offset))
+@@ -762,6 +771,9 @@
+ 	void __iomem *pcie_index_offset;
+ 	void __iomem *pcie_data_offset;
+ 
++	if (amdgpu_device_skip_hw_access(adev))
++		return;
++
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+ 
+@@ -783,6 +795,9 @@
+ 	void __iomem *pcie_index_offset;
+ 	void __iomem *pcie_index_hi_offset;
+ 	void __iomem *pcie_data_offset;
++
++	if (amdgpu_device_skip_hw_access(adev))
++		return;
+ 
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+@@ -832,6 +847,9 @@
+ 	void __iomem *pcie_index_offset;
+ 	void __iomem *pcie_data_offset;
+ 
++	if (amdgpu_device_skip_hw_access(adev))
++		return;
++
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+ 
+@@ -860,6 +878,9 @@
+ 	void __iomem *pcie_index_offset;
+ 	void __iomem *pcie_index_hi_offset;
+ 	void __iomem *pcie_data_offset;
++
++	if (amdgpu_device_skip_hw_access(adev))
++		return;
+ 
+ 	pcie_index = adev->nbio.funcs->get_pcie_index_offset(adev);
+ 	pcie_data = adev->nbio.funcs->get_pcie_data_offset(adev);
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_trace.h
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_trace.h
+@@ -583,5 +583,5 @@
+ 
+ /* This part must be outside protection */
+ #undef TRACE_INCLUDE_PATH
+-#define TRACE_INCLUDE_PATH ../../drivers/gpu/drm/amd/amdgpu
++#define TRACE_INCLUDE_PATH .
+ #include <trace/define_trace.h>
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
+@@ -70,11 +70,13 @@
+ #include "ivsrcid/ivsrcid_vislands30.h"
+ 
+ #include <linux/backlight.h>
++#include <linux/dmi.h>
+ #include <linux/minmax.h>
+ #include <linux/module.h>
+ #include <linux/moduleparam.h>
+ #include <linux/types.h>
+ #include <linux/pm_runtime.h>
++#include <linux/vgaarb.h>
+ #include <linux/pci.h>
+ #include <linux/power_supply.h>
+ #include <linux/firmware.h>
+@@ -2200,11 +2202,17 @@
+ 	retrieve_dmi_info(&adev->dm);
+ 	if (adev->dm.edp0_on_dp1_quirk)
+ 		init_data.flags.support_edp0_on_dp1 = true;
++	if (adev->dm.imac5K_support)
++		init_data.flags.imac5K_support = true;
+ 
+ 	if (adev->dm.bb_from_dmub)
+ 		init_data.bb_from_dmub = adev->dm.bb_from_dmub;
+ 	else
+ 		init_data.bb_from_dmub = NULL;
++
++	if (amdgpu_device_has_gmux_edp(adev) &&
++	    adev->pdev != vga_default_device())
++		init_data.flags.edp_not_connected = true;
+ 
+ 	/* Display Core create. */
+ 	adev->dm.dc = dc_create(&init_data);
+@@ -2217,7 +2225,16 @@
+ 		goto error;
+ 	}
+ 
+-	if (amdgpu_dc_debug_mask & DC_DISABLE_PIPE_SPLIT) {
++	/*
++	 * On the 3072x1920 panel of the MacBookPro16,1 the MPC split leaves
++	 * too few vblank lines for prefetch, so DML reports no DRAM clock
++	 * change support and UCLK stays at its top level. The macOS driver
++	 * sets DalPipeSplitPolicy to 1 on these GPUs and drives the panel
++	 * from one pipe.
++	 */
++	if ((amdgpu_dc_debug_mask & DC_DISABLE_PIPE_SPLIT) ||
++	    (adev->pdev->subsystem_vendor == PCI_VENDOR_ID_APPLE &&
++	     dmi_match(DMI_PRODUCT_NAME, "MacBookPro16,1"))) {
+ 		adev->dm.dc->debug.force_single_disp_pipe_split = false;
+ 		adev->dm.dc->debug.pipe_split_policy = MPC_SPLIT_AVOID;
+ 	}
+@@ -3879,6 +3896,11 @@
+ 		dc_exit_ips_for_hw_access(dm->dc);
+ 		WARN_ON(!dc_commit_streams(dm->dc, &commit_params));
+ 
++		if (dm->dc->config.imac5K_using_5K) {
++			const u8 value = 1;
++
++			core_link_write_dpcd(dm->dc->links[0], 0x4F1, &value, 1);
++		}
+ 		dm_gpureset_commit_state(dm->cached_dc_state, dm);
+ 
+ 		dm_gpureset_toggle_interrupts(adev, dm->cached_dc_state, true);
+@@ -3966,7 +3988,9 @@
+ 		if (!dc_link_detect_connection_type(aconnector->dc_link, &new_connection_type))
+ 			drm_err(adev_to_drm(adev), "KMS: Failed to detect connector\n");
+ 
+-		if (aconnector->base.force && new_connection_type == dc_connection_none) {
++		if ((aconnector->base.force && new_connection_type == dc_connection_none) ||
++				(dm->dc->config.imac5K_support &&
++				 aconnector->dc_link->link_index == 1)) {
+ 			emulated_link_detect(aconnector->dc_link);
+ 		} else {
+ 			guard(mutex)(&dm->dc_lock);
+@@ -6007,6 +6031,15 @@
+ 		if (dm->hpd_rx_offload_wq)
+ 			dm->hpd_rx_offload_wq[aconnector->base.index].aconnector =
+ 				aconnector;
++
++		/* Like the resume path, skip eDP detection without a sink. */
++		if (link->connector_signal == SIGNAL_TYPE_EDP &&
++		    amdgpu_device_has_gmux_edp(adev) &&
++		    !link->edp_sink_present) {
++			drm_info(adev_to_drm(adev), "Skipping detection of inactive GMUX eDP link %d\n",
++				 i);
++			continue;
++		}
+ 
+ 		if (!dc_link_detect_connection_type(link, &new_connection_type))
+ 			drm_err(adev_to_drm(adev), "KMS: Failed to detect connector\n");
+@@ -7349,6 +7382,14 @@
+ 		 */
+ 	}
+ 
++	if (context->streams[0]->ctx->dc->config.imac5K_support) {
++		for (i = 0; i < context->stream_count; i++) {
++			stream = context->streams[i];
++			if (stream && stream->link && stream->link->link_index == 1)
++				stream->triggered_crtc_reset.enabled = true;
++		}
++	}
++
+ 	set_master_stream(context->streams, context->stream_count);
+ 
+ 	for (i = 0; i < context->stream_count ; i++) {
+@@ -8231,6 +8272,14 @@
+ 	if (amdgpu_dm_connector->base.connector_type != DRM_MODE_CONNECTOR_eDP)
+ 		return false;
+ 
++	/*
++	 * An eDP link without a panel, like the one GMUX routes to the other
++	 * GPU, has no power to save. Writing the attribute would still send a
++	 * hotplug event that runtime resumes the GPU.
++	 */
++	if (!amdgpu_dm_connector->dc_link->edp_sink_present)
++		return false;
++
+ 	/* check for OLED panels */
+ 	if (amdgpu_dm_connector->bl_idx >= 0) {
+ 		struct drm_device *drm = amdgpu_dm_connector->base.dev;
+@@ -8930,6 +8979,13 @@
+ 				       adjusted_mode->hdisplay, adjusted_mode->vdisplay,
+ 				       drm_mode_vrefresh(adjusted_mode));
+ 			dm_new_connector_state->scaling = RMX_ASPECT;
++		}
++
++		if (aconnector->dc_link->dc->config.imac5K_support) {
++			if (crtc_state->mode.vdisplay != 2880)
++				dm_new_connector_state->scaling = RMX_FULL;
++			else
++				dm_new_connector_state->scaling = RMX_OFF;
+ 		}
+ 		return 0;
+ 	}
+@@ -11358,6 +11414,25 @@
+ 	dc_exit_ips_for_hw_access(dm->dc);
+ 	WARN_ON(!dc_commit_streams(dm->dc, &params));
+ 
++	if (dm->imac5K_support) {
++		for_each_new_crtc_in_state(state, crtc, new_crtc_state, i) {
++			dm_new_crtc_state = to_dm_crtc_state(new_crtc_state);
++
++			if (!dm_new_crtc_state->stream)
++				continue;
++
++			if (dm_new_crtc_state->stream->signal != SIGNAL_TYPE_EDP)
++				continue;
++
++			if (new_crtc_state->mode.vdisplay == 2880 && new_crtc_state->mode.hdisplay == 2560) {
++				u8 value = 1;
++
++				core_link_write_dpcd(dm->dc->links[0], 0x4F1, &value, 1);
++				dm->dc->config.imac5K_using_5K = true;
++			} else
++				dm->dc->config.imac5K_using_5K = false;
++		}
++	}
+ 	bool frl_stream_found = false;
+ 
+ 	for (i = 0; i < params.stream_count; i++) {
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h
+@@ -686,6 +686,13 @@
+ 	bool edp0_on_dp1_quirk;
+ 
+ 	/**
++	 * @imac5K_support:
++	 *
++	 * quirk for iMac that support 5K
++	 */
++	bool imac5K_support;
++
++	/**
+ 	 * @dpia_aux_lock:
+ 	 *
+ 	 * Guards access to DPIA AUX
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_mst_types.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_mst_types.c
+@@ -24,6 +24,7 @@
+  *
+  */
+ 
++#include <linux/pm_runtime.h>
+ #include <linux/vmalloc.h>
+ #include <drm/display/drm_dp_helper.h>
+ #include <drm/display/drm_dp_mst_helper.h>
+@@ -68,6 +69,20 @@
+ 	if (WARN_ON(msg->size > 16))
+ 		return -E2BIG;
+ 
++	ddc = TO_DM_AUX(aux)->ddc_service;
++	adev = ddc->ctx->driver_context;
++
++	/*
++	 * User space reaches this through the drm_dp_aux_dev character device
++	 * without a runtime PM reference. Refuse the transfer while GMUX keeps
++	 * the GPU powered off, a register access then hangs the PEG link.
++	 */
++	pm_runtime_get_noresume(adev->dev);
++	if (READ_ONCE(adev->gmux_off)) {
++		pm_runtime_put_noidle(adev->dev);
++		return -EBUSY;
++	}
++
+ 	payload.address = msg->address;
+ 	payload.data = msg->buffer;
+ 	payload.length = msg->size;
+@@ -87,13 +102,13 @@
+ 	result = dc_link_aux_transfer_raw(TO_DM_AUX(aux)->ddc_service, &payload,
+ 				      &operation_result);
+ 
++	pm_runtime_put_autosuspend(adev->dev);
++
+ 	/*
+ 	 * w/a on certain intel platform where hpd is unexpected to pull low during
+ 	 * 1st sideband message transaction by return AUX_RET_ERROR_HPD_DISCON
+ 	 * aux transaction is succuess in such case, therefore bypass the error
+ 	 */
+-	ddc = TO_DM_AUX(aux)->ddc_service;
+-	adev = ddc->ctx->driver_context;
+ 	if (adev->dm.aux_hpd_discon_quirk) {
+ 		if (msg->address == DP_SIDEBAND_MSG_DOWN_REQ_BASE &&
+ 			operation_result == AUX_RET_ERROR_HPD_DISCON) {
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_quirks.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_quirks.c
+@@ -32,11 +32,13 @@
+ struct amdgpu_dm_quirks {
+ 	bool aux_hpd_discon;
+ 	bool support_edp0_on_dp1;
++	bool imac5K_support;
+ };
+ 
+ static struct amdgpu_dm_quirks quirk_entries = {
+ 	.aux_hpd_discon = false,
+-	.support_edp0_on_dp1 = false
++	.support_edp0_on_dp1 = false,
++	.imac5K_support = false,
+ };
+ 
+ static int edp0_on_dp1_callback(const struct dmi_system_id *id)
+@@ -51,6 +53,12 @@
+ 	return 0;
+ }
+ 
++static int imac5K_support_callback(const struct dmi_system_id *id)
++{
++	quirk_entries.imac5K_support = true;
++	return 0;
++}
++
+ static const struct dmi_system_id dmi_quirk_table[] = {
+ 	{
+ 		.callback = aux_hpd_discon_callback,
+@@ -148,6 +156,20 @@
+ 		.matches = {
+ 			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
+ 			DMI_MATCH(DMI_PRODUCT_NAME, "HP ProBook 465 16 inch G11 Notebook PC"),
++		},
++	},
++	{
++		.callback = imac5K_support_callback,
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
++			DMI_MATCH(DMI_PRODUCT_NAME, "iMac20,1"),
++		},
++	},
++	{
++		.callback = imac5K_support_callback,
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Apple Inc."),
++			DMI_MATCH(DMI_PRODUCT_NAME, "iMac20,2"),
+ 		},
+ 	},
+ 	{}
+@@ -161,6 +183,7 @@
+ 
+ 	dm->aux_hpd_discon_quirk = false;
+ 	dm->edp0_on_dp1_quirk = false;
++	dm->imac5K_support = false;
+ 
+ 	dmi_id = dmi_check_system(dmi_quirk_table);
+ 
+@@ -175,4 +198,8 @@
+ 		dm->edp0_on_dp1_quirk = true;
+ 		drm_info(dev, "support_edp0_on_dp1 attached\n");
+ 	}
+-}
++	if (quirk_entries.imac5K_support) {
++		dm->imac5K_support = true;
++		drm_info(dev, "imac5K_support attached\n");
++	}
++}
+--- a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+@@ -678,6 +678,14 @@
+ 	struct dc_stream_state *stream1,
+ 	struct dc_stream_state *stream2)
+ {
++
++	if (stream1->ctx->dc->config.imac5K_support &&
++		((stream1->signal == SIGNAL_TYPE_EDP && stream2->signal == SIGNAL_TYPE_DISPLAY_PORT &&
++		stream2->link->link_index == 1) ||
++		(stream2->signal == SIGNAL_TYPE_EDP && stream1->signal == SIGNAL_TYPE_DISPLAY_PORT &&
++		stream1->link->link_index == 1)))
++		return true;
++
+ 	if (stream1->timing.h_total != stream2->timing.h_total)
+ 		return false;
+ 
+--- a/drivers/gpu/drm/amd/display/dc/dc.h
++++ b/drivers/gpu/drm/amd/display/dc/dc.h
+@@ -619,6 +619,8 @@
+ 	struct spl_sharpness_range dcn_sharpness_range;
+ 	struct spl_sharpness_range dcn_override_sharpness_range;
+ 	bool no_native422_support;
++	bool imac5K_support;
++	bool imac5K_using_5K;
+ };
+ 
+ enum visual_confirm {
+--- a/drivers/gpu/drm/amd/display/dc/hwss/dcn10/dcn10_hwseq.c
++++ b/drivers/gpu/drm/amd/display/dc/hwss/dcn10/dcn10_hwseq.c
+@@ -2671,15 +2671,21 @@
+ 	struct pipe_ctx *grouped_pipes[])
+ {
+ 	int i;
++	int source_tg_inst = 0;
+ 
+ 	DC_LOGGER_INIT(dc->ctx);
+ 
+ 	DC_SYNC_INFO("Setting up\n");
++	if (dc->config.imac5K_support &&
++			grouped_pipes[0]->stream ==
++			grouped_pipes[0]->stream->triggered_crtc_reset.event_source)
++		source_tg_inst = grouped_pipes[0]->stream_res.tg->inst;
++
+ 	for (i = 0; i < group_size; i++)
+ 		if (grouped_pipes[i]->stream_res.tg->funcs->enable_crtc_reset)
+ 			grouped_pipes[i]->stream_res.tg->funcs->enable_crtc_reset(
+ 					grouped_pipes[i]->stream_res.tg,
+-					0,
++					source_tg_inst,
+ 					&grouped_pipes[i]->stream->triggered_crtc_reset);
+ 
+ 	DC_SYNC_INFO("Waiting for trigger\n");
+--- a/drivers/gpu/drm/amd/display/dc/link/link_detection.c
++++ b/drivers/gpu/drm/amd/display/dc/link/link_detection.c
+@@ -1151,7 +1151,10 @@
+ 				if (!link->dpcd_caps.set_power_state_capable_edp)
+ 					link->wa_flags.dp_keep_receiver_powered = true;
+ 			}
+-
++			if (dc->config.imac5K_support) {
++				const uint8_t val = 1;
++				core_link_write_dpcd(link, 0x4F1, &val, 1);
++			}
+ 			sink_caps.transaction_type = DDC_TRANSACTION_TYPE_I2C_OVER_AUX;
+ 			sink_caps.signal = SIGNAL_TYPE_EDP;
+ 			break;
+--- a/drivers/gpu/drm/amd/pm/amdgpu_dpm.c
++++ b/drivers/gpu/drm/amd/pm/amdgpu_dpm.c
+@@ -31,6 +31,7 @@
+ #include "amdgpu_display.h"
+ #include "hwmgr.h"
+ #include <linux/power_supply.h>
++#include <linux/pm_runtime.h>
+ #include "amdgpu_smu.h"
+ 
+ #define amdgpu_dpm_notify_ac_dc(adev) \
+@@ -498,21 +499,35 @@
+ 
+ void amdgpu_pm_acpi_event_handler(struct amdgpu_device *adev)
+ {
++	int active;
++
+ 	if (adev->pm.dpm_enabled) {
++		/*
++		 * The ACPI notifier holds no runtime PM reference. Only record
++		 * the power source while the GPU is not active, the resume path
++		 * applies adev->pm.ac_power when it sets the power state again.
++		 */
++		active = pm_runtime_get_if_active(adev->dev);
++
+ 		mutex_lock(&adev->pm.mutex);
+ 		if (power_supply_is_system_supplied() > 0)
+ 			adev->pm.ac_power = true;
+ 		else
+ 			adev->pm.ac_power = false;
+ 
+-		if (adev->powerplay.pp_funcs &&
+-		    adev->powerplay.pp_funcs->notify_ac_dc)
+-			amdgpu_dpm_notify_ac_dc(adev);
+-
+-		if (is_support_sw_smu(adev))
+-			smu_set_ac_dc(adev->powerplay.pp_handle);
+-
+-		mutex_unlock(&adev->pm.mutex);
++		if (active) {
++			if (adev->powerplay.pp_funcs &&
++			    adev->powerplay.pp_funcs->notify_ac_dc)
++				amdgpu_dpm_notify_ac_dc(adev);
++
++			if (is_support_sw_smu(adev))
++				smu_set_ac_dc(adev->powerplay.pp_handle);
++		}
++
++		mutex_unlock(&adev->pm.mutex);
++
++		if (active > 0)
++			pm_runtime_put_autosuspend(adev->dev);
+ 	}
+ }
+ 
+--- a/drivers/gpu/drm/amd/pm/inc/amdgpu_dpm.h
++++ b/drivers/gpu/drm/amd/pm/inc/amdgpu_dpm.h
+@@ -48,6 +48,7 @@
+ enum amdgpu_runpm_mode {
+ 	AMDGPU_RUNPM_NONE,
+ 	AMDGPU_RUNPM_PX,
++	AMDGPU_RUNPM_GMUX,
+ 	AMDGPU_RUNPM_BOCO,
+ 	AMDGPU_RUNPM_BACO,
+ 	AMDGPU_RUNPM_BAMACO,
+--- a/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
++++ b/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+@@ -468,6 +468,60 @@
+ 	return 0;
+ }
+ 
++static bool navi14_needs_trained_uclk(struct amdgpu_device *adev)
++{
++	struct pci_dev *pdev = adev->pdev;
++
++	return pdev->vendor == PCI_VENDOR_ID_ATI &&
++		pdev->device == 0x7340 &&
++		pdev->subsystem_vendor == PCI_VENDOR_ID_APPLE &&
++		(pdev->subsystem_device == 0x020f ||
++		 pdev->subsystem_device == 0x0210);
++}
++
++/*
++ * The pptable of these boards lists other UCLK levels than the VBIOS trained
++ * the UMC p-state sets at, and the SMU hangs switching into such a level.
++ */
++static void navi14_use_trained_uclk_levels(struct smu_context *smu)
++{
++	struct amdgpu_device *adev = smu->adev;
++	PPTable_t *pptable = smu->smu_table.driver_pptable;
++	struct atom_umc_info_v3_3 *umc_info;
++	uint16_t trained[NUM_UCLK_DPM_LEVELS];
++	uint16_t size;
++	uint8_t frev, crev;
++	int index, i;
++
++	if (!navi14_needs_trained_uclk(adev) ||
++	    pptable->DpmDescriptor[PPCLK_UCLK].NumDiscreteLevels != NUM_UCLK_DPM_LEVELS)
++		return;
++
++	index = get_index_into_master_table(atom_master_list_of_data_tables_v2_1,
++					    umc_info);
++	if (amdgpu_atombios_get_data_table(adev, index, &size, &frev, &crev,
++					   (uint8_t **)&umc_info) ||
++	    frev != 3 || crev != 3 || size < sizeof(*umc_info))
++		return;
++
++	for (i = 0; i < NUM_UCLK_DPM_LEVELS; i++) {
++		trained[i] = le32_to_cpu(umc_info->pstate_uclk_10khz[MAX_UCLK_DPM_LEVEL - i]) / 100;
++		if (!trained[i] || (i && trained[i] <= trained[i - 1]))
++			return;
++	}
++
++	for (i = 0; i < NUM_UCLK_DPM_LEVELS; i++) {
++		if (pptable->FreqTableUclk[i] == trained[i])
++			continue;
++		dev_info(adev->dev, "UCLK level %d: %u MHz -> %u MHz, as trained by the VBIOS\n",
++			 i, pptable->FreqTableUclk[i], trained[i]);
++		pptable->FreqTableUclk[i] = trained[i];
++	}
++
++	pptable->DcModeMaxFreq[PPCLK_UCLK] = min(pptable->DcModeMaxFreq[PPCLK_UCLK],
++						 trained[MAX_UCLK_DPM_LEVEL]);
++}
++
+ static int navi10_setup_pptable(struct smu_context *smu)
+ {
+ 	int ret = 0;
+@@ -479,6 +533,8 @@
+ 	ret = navi10_store_powerplay_table(smu);
+ 	if (ret)
+ 		return ret;
++
++	navi14_use_trained_uclk_levels(smu);
+ 
+ 	ret = navi10_append_powerplay_table(smu);
+ 	if (ret)
+@@ -2171,6 +2227,14 @@
+ 		}
+ 	}
+ 
++	/*
++	 * Apple boards have no overdrive power limit range. The macOS driver
++	 * builds its power limit steps from the TDP down to 40 % of it, and the
++	 * Mac SMC uses them to share the heatpipe between CPU and GPU.
++	 */
++	if (!od_percent_lower && smu->adev->pdev->subsystem_vendor == PCI_VENDOR_ID_APPLE)
++		od_percent_lower = 60;
++
+ 	dev_dbg(smu->adev->dev, "od percent upper:%d, od percent lower:%d (default power: %d)\n",
+ 					od_percent_upper, od_percent_lower, power_limit);
+ 
+@@ -2567,6 +2631,9 @@
+ 	struct amdgpu_device *adev = smu->adev;
+ 
+ 	if (!smu_cmn_feature_is_enabled(smu, SMU_FEATURE_DPM_UCLK_BIT))
++		return false;
++
++	if (adev->pdev->subsystem_vendor == 0x106B)
+ 		return false;
+ 
+ 	if (amdgpu_ip_version(adev, MP1_HWIP, 0) == IP_VERSION(11, 0, 0) ||
+--- a/sound/hda/controllers/intel.c
++++ b/sound/hda/controllers/intel.c
+@@ -334,9 +334,11 @@
+ #ifdef SUPPORT_VGA_SWITCHEROO
+ #define use_vga_switcheroo(chip)	((chip)->use_vga_switcheroo)
+ #define needs_eld_notify_link(chip)	((chip)->bus.keep_power)
++static bool azx_vga_is_powered_off(struct azx *chip);
+ #else
+ #define use_vga_switcheroo(chip)	0
+ #define needs_eld_notify_link(chip)	false
++#define azx_vga_is_powered_off(chip)	false
+ #endif
+ 
+ static const char * const driver_short_names[] = {
+@@ -1025,6 +1027,10 @@
+ 		return 0;
+ 
+ 	chip = card->private_data;
++	/* A positive return allows the PM core to use direct complete. */
++	if (azx_vga_is_powered_off(chip))
++		return 1;
++
+ 	chip->pm_prepared = 1;
+ 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
+ 
+@@ -1184,6 +1190,24 @@
+ 
+ #ifdef SUPPORT_VGA_SWITCHEROO
+ static struct pci_dev *get_bound_vga(struct pci_dev *pci);
++
++static bool azx_vga_is_powered_off(struct azx *chip)
++{
++	struct pci_dev *pci;
++	bool powered_off = false;
++
++	if (!use_vga_switcheroo(container_of(chip, struct hda_intel, chip)))
++		return false;
++
++	pci = get_bound_vga(chip->pci);
++	if (pci) {
++		powered_off = pm_runtime_suspended(&pci->dev) &&
++			vga_switcheroo_get_client_state(pci) == VGA_SWITCHEROO_OFF;
++		pci_dev_put(pci);
++	}
++
++	return powered_off;
++}
+ 
+ static void azx_vs_set_state(struct pci_dev *pci,
+ 			     enum vga_switcheroo_state state)

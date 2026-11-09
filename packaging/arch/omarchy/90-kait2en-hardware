@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+# Only run on MacBookPro16,1
+[[ -r /sys/class/dmi/id/product_name ]] || exit 0
+[[ "$(cat /sys/class/dmi/id/product_name)" == "MacBookPro16,1" ]] || exit 0
+
+errors=()
+
+# 1. Native packages
+packages=(
+    t2-dsp bankstown lsp-plugins-lv2
+    kait2en-battery-dkms kait2en-gmux-dkms
+    kait2en-hybrid-gpu kait2en-power-tools
+    kait2en-touchid kait2en-ave t2center
+)
+for pkg in "${packages[@]}"; do
+    if ! pacman -Q "$pkg" >/dev/null 2>&1; then
+        errors+=("Missing package: $pkg")
+    fi
+done
+
+# 2. Kernel drivers
+for mod in t2smc t2sbs t2gmux; do
+    if [[ ! -d "/sys/module/$mod" ]]; then
+        errors+=("Expected driver not loaded: $mod")
+    fi
+done
+
+for mod in applesmc sbs apple_gmux; do
+    if [[ -d "/sys/module/$mod" ]]; then
+        errors+=("Deprecated driver unexpectedly loaded: $mod")
+    fi
+done
+
+# 3. Active services
+for srv in t2-fancontrol.service t2-zonepowerd.service t2-smc-gaugingd.service; do
+    if ! systemctl is-active --quiet "$srv"; then
+        errors+=("Service inactive: $srv")
+    fi
+done
+
+for srv in gpu-amd-dpm-low.service t2fanrd.service; do
+    if systemctl is-enabled --quiet "$srv" 2>/dev/null; then
+        errors+=("Deprecated service unexpectedly enabled: $srv")
+    fi
+done
+
+# 4. GPU runtime PM state
+gpu_pm="/sys/bus/pci/devices/0000:03:00.0/power/runtime_status"
+if [[ -f "$gpu_pm" ]]; then
+    state=$(cat "$gpu_pm")
+    if [[ "$state" != "suspended" && "$state" != "active" ]]; then
+        errors+=("Unexpected GPU runtime PM state: $state")
+    fi
+fi
+
+# 5. Battery charge control attribute
+if [[ ! -f /sys/class/power_supply/BAT0/charge_control_end_threshold ]]; then
+    errors+=("Battery charge limit attribute missing")
+fi
+
+if (( ${#errors[@]} > 0 )); then
+    printf 'KAIT2EN hardware check failed:\n' >&2
+    printf '  - %s\n' "${errors[@]}" >&2
+    notify-send -u critical "KAIT2EN hardware check" "$(printf '%s\n' "${errors[@]}")" 2>/dev/null || true
+    exit 1
+fi
+
+echo "KAIT2EN hardware check passed: GPU runtime PM, battery charge control, and thermal daemons active."

@@ -94,3 +94,16 @@ needs Python 3, its source is `packaging/lifecycle/`.
 The package includes the full GPL-3.0-or-later text, `LICENSE`, `LICENSING.md`
 and each profile's attribution notice. The section 7(b) attribution term
 continues to apply. External plugins retain their own package licenses.
+
+## Arch / Omarchy
+
+The local `PKGBUILD` pins KaiT2en source commit
+`cf64a1fcee7cfb790c74847c8356965aa42e2160`; `t2-dsp.install` runs the same
+ownership-aware lifecycle engine for installation, upgrade and removal.
+Build/install Bankstown from `../../packaging/arch/bankstown/` first (relative
+to this directory), then run `makepkg -si` here. Install `lsp-plugins-lv2`
+and the T2 UCM package as prerequisites.
+
+The current Omarchy Bash update hook and complete build/activation/rollback
+instructions are in [the Arch integration guide](../../packaging/arch/README.md).
+Do not run the Fedora installer or stack competing speaker DSP graphs.

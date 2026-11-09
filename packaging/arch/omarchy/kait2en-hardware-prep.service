@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare KAIT2EN GPU and audio runtime PM
+After=systemd-modules-load.service systemd-udevd.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/kait2en-hardware-prep
+RemainAfterExit=yes
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

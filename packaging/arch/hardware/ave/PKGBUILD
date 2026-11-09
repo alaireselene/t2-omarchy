@@ -1,0 +1,32 @@
+pkgname=kait2en-ave
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Apple T2 AVE and Sidecar hardware video encoder service and drivers'
+arch=('x86_64')
+url='https://github.com/kaiT2en/KaiT2en-Fedora'
+license=('GPL-3.0-or-later')
+depends=('dkms' 'ffmpeg')
+makedepends=('git' 'cargo')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160')
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/kait2en/t2-services/t2-ave"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$srcdir/kait2en/t2-services/t2-ave"
+  install -Dm755 target/release/t2remote "$pkgdir/usr/bin/t2remote"
+
+  # Systemd service
+  install -d "$pkgdir/usr/lib/systemd/system"
+  sed 's|@BINDIR@|/usr/bin|g' integration/systemd/kait2en-t2-remote.service > "$pkgdir/usr/lib/systemd/system/kait2en-t2-remote.service"
+  chmod 644 "$pkgdir/usr/lib/systemd/system/kait2en-t2-remote.service"
+
+  # Sidecar DKMS module
+  local dkms_dest="$pkgdir/usr/src/t2bce_sidecar-$pkgver"
+  install -d "$dkms_dest"
+  install -m644 kernel/t2bce_sidecar/*.c kernel/t2bce_sidecar/*.h kernel/t2bce_sidecar/Makefile "$dkms_dest/"
+  printf 'PACKAGE_NAME="t2bce_sidecar"\nPACKAGE_VERSION="%s"\nMAKE[0]="make KDIR=/lib/modules/${kernelver}/build KVER=${kernelver}"\nBUILT_MODULE_NAME[0]="t2bce_sidecar"\nDEST_MODULE_LOCATION[0]="/updates/dkms"\nAUTOINSTALL="yes"\n' "$pkgver" > "$dkms_dest/dkms.conf"
+}

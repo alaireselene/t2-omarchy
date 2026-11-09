@@ -1,0 +1,18 @@
+pkgname=t2-dsp
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='KAIT2EN model-specific Apple T2 speaker and microphone DSP'
+arch=('any')
+url='https://github.com/kaiT2en/KaiT2en-Fedora'
+license=('GPL-3.0-or-later')
+depends=('python' 'pipewire-audio' 'wireplumber>=0.5.8' 'bankstown' 'lsp-plugins-lv2' 't2bce_audio-alsa-ucm-conf' 'systemd')
+makedepends=('git' 'make')
+install=t2-dsp.install
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160')
+sha256sums=('SKIP')
+build() {
+  make -C "$srcdir/kait2en/dsp" build
+}
+package() {
+  make -C "$srcdir/kait2en/dsp" DESTDIR="$pkgdir" install
+}

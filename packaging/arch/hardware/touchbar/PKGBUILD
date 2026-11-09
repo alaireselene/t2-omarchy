@@ -1,0 +1,34 @@
+pkgname=kait2en-touchbar
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Dark-first custom Touch Bar daemon and gestures for Apple T2 MacBooks'
+arch=('x86_64')
+url='https://github.com/kaiT2en/KaiT2en-Fedora'
+license=('GPL-3.0-or-later')
+depends=('libdrm' 'libinput' 'systemd')
+makedepends=('git' 'cargo')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160')
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/kait2en/apps/t2-touchbar"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$srcdir/kait2en/apps/t2-touchbar"
+  install -Dm755 target/release/kait2en-touchbar "$pkgdir/usr/bin/kait2en-touchbar"
+  install -d "$pkgdir/usr/local/bin"
+  ln -sf /usr/bin/kait2en-touchbar "$pkgdir/usr/local/bin/kait2en-touchbar"
+
+  install -Dm644 config/touchbar.toml "$pkgdir/etc/kait2en/touchbar.toml"
+  
+  install -d "$pkgdir/usr/lib/systemd/user"
+  sed 's|/usr/local/bin/|/usr/bin/|g' integration/systemd/user/kait2en-touchbar.service > "$pkgdir/usr/lib/systemd/user/kait2en-touchbar.service"
+
+  install -d "$pkgdir/usr/lib/systemd/system"
+  sed 's|/usr/local/bin/|/usr/bin/|g' integration/systemd/system/kait2en-touchbar-attach.service > "$pkgdir/usr/lib/systemd/system/kait2en-touchbar-attach.service"
+
+  install -Dm644 integration/udev/99-zz-kait2en-touchbar.rules "$pkgdir/usr/lib/udev/rules.d/99-zz-kait2en-touchbar.rules"
+  install -Dm644 THIRD-PARTY-NOTICES.md "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
+}

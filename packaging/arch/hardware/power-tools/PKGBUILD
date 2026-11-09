@@ -1,0 +1,43 @@
+pkgname=kait2en-power-tools
+pkgver=20261108
+pkgrel=1
+pkgdesc='KAIT2EN fan control, battery calibration and SMC zone power management'
+arch=('x86_64')
+url='https://github.com/kaiT2en/KaiT2en-Fedora'
+license=('GPL-3.0-or-later')
+depends=('gtk4' 'libadwaita' 'polkit' 'util-linux' 'kait2en-battery-dkms')
+makedepends=('git' 'cargo' 'pkgconf')
+options=('!debug')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160' 't2-fancontrol.service' 't2-smc-gaugingd.service' 't2-zonepowerd.service')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+build() {
+  local project cache
+  for project in t2-fan-control t2-smc-control t2-zone-power; do
+    cache="$startdir/build/$project"
+    [[ -n ${KAIT2EN_BUILD_CACHE:-} ]] && cache="$KAIT2EN_BUILD_CACHE/$project/target"
+    CARGO_BUILD_JOBS=3 cargo build --release --locked --target-dir "$cache" --manifest-path "$srcdir/kait2en/apps/$project/Cargo.toml"
+  done
+}
+
+package() {
+  local project binary appid cache
+  for project in t2-fan-control t2-smc-control t2-zone-power; do
+    case "$project" in
+      t2-fan-control) binary=t2-fancontrol-gtk; appid=org.t2fancontrol.gtk ;;
+      t2-smc-control) binary=t2-smc-control; appid=org.t2smccontrol.gtk ;;
+      t2-zone-power) binary=t2-zonepower-gtk; appid=org.t2zonepower.gtk ;;
+    esac
+    cache="$startdir/build/$project"
+    [[ -n ${KAIT2EN_BUILD_CACHE:-} ]] && cache="$KAIT2EN_BUILD_CACHE/$project/target"
+    install -Dm755 "$cache/release/$binary" "$pkgdir/usr/bin/$binary"
+    install -Dm644 "$srcdir/kait2en/apps/$project/$appid.desktop" "$pkgdir/usr/share/applications/$appid.desktop"
+    sed -i "s|/usr/local/bin/|/usr/bin/|g" "$pkgdir/usr/share/applications/$appid.desktop"
+    install -Dm644 "$srcdir/kait2en/apps/$project/assets/icons/hicolor/scalable/apps/$appid.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/$appid.svg"
+  done
+  for unit in t2-fancontrol t2-smc-gaugingd t2-zonepowerd; do
+    install -Dm644 "$srcdir/$unit.service" "$pkgdir/usr/lib/systemd/system/$unit.service"
+  done
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+  install -Dm644 "$srcdir/kait2en/LICENSES/GPL-3.0-or-later.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-3.0-or-later.txt"
+}

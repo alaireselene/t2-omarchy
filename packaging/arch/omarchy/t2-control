@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Unified hardware control helper for Omarchy T2 plugins and applications."""
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+
+BATTERY = Path('/sys/class/power_supply/BAT0')
+GPU = Path('/sys/bus/pci/devices/0000:03:00.0')
+
+
+def get_smc():
+    for p in Path('/sys/class/hwmon').glob('hwmon*'):
+        if (p / 'name').exists() and (p / 'name').read_text().strip() == 't2smc':
+            return p
+    return None
+
+
+def get_status():
+    smc = get_smc()
+    pstr = None
+    temps = {}
+    fans = {}
+    if smc:
+        labels = {p.name.replace('_label', '_input'): p.read_text().strip()
+                  for p in smc.glob('power*_label')}
+        for fname, label in labels.items():
+            if label == 'PSTR':
+                try:
+                    pstr = round(int((smc / fname).read_text().strip()) / 1e6, 2)
+                except OSError:
+                    pass
+        for p in smc.glob('temp*_label'):
+            label = p.read_text().strip()
+            if label in ('TC0E', 'TC0F', 'TG0P', 'TG0D', 'TB0T'):
+                try:
+                    inp = p.name.replace('_label', '_input')
+                    temps[label] = int((smc / inp).read_text().strip()) // 1000
+                except OSError:
+                    pass
+        for p in smc.glob('fan*_input'):
+            try:
+                fans[p.name] = int(p.read_text().strip())
+            except OSError:
+                pass
+
+    gpu_status = 'unknown'
+    gpu_state = 'unknown'
+    if (GPU / 'power/runtime_status').exists():
+        gpu_status = (GPU / 'power/runtime_status').read_text().strip()
+    if (GPU / 'power_state').exists():
+        gpu_state = (GPU / 'power_state').read_text().strip()
+
+    bat_status = (BATTERY / 'status').read_text().strip() if (BATTERY / 'status').exists() else 'unknown'
+    capacity = int((BATTERY / 'capacity').read_text().strip()) if (BATTERY / 'capacity').exists() else 0
+    threshold = int((BATTERY / 'charge_control_end_threshold').read_text().strip()) if (BATTERY / 'charge_control_end_threshold').exists() else 100
+
+    cpu_t = round(sum([temps[k] for k in ('TC0E', 'TC0F') if k in temps]) / max(1, sum(1 for k in ('TC0E', 'TC0F') if k in temps))) if any(k in temps for k in ('TC0E', 'TC0F')) else 0
+    gpu_t = max([temps[k] for k in ('TG0P', 'TG0D') if k in temps] or [0])
+
+    return {
+        'system_watts': pstr,
+        'cpu_temp_c': cpu_t,
+        'gpu_temp_c': gpu_t,
+        'battery_temp_c': temps.get('TB0T', 0),
+        'fans_rpm': fans,
+        'gpu_runtime_status': gpu_status,
+        'gpu_power_state': gpu_state,
+        'battery_status': bat_status,
+        'battery_capacity': capacity,
+        'charge_limit': threshold,
+    }
+
+
+def set_charge_limit(val):
+    if not (20 <= val <= 100):
+        raise ValueError('Charge limit must be between 20 and 100')
+    (BATTERY / 'charge_control_end_threshold').write_text(str(val))
+    print(f'Set charge limit to {val}%')
+
+
+def set_fan_preset(preset):
+    smc = get_smc()
+    if not smc:
+        raise SystemExit('t2smc not found')
+    targets = list(smc.glob('fan*_target'))
+    if preset == 'auto':
+        for t in targets:
+            t.write_text('0')
+        print('Handed fans back to SMC curve')
+    elif preset == 'quiet':
+        for t in targets:
+            t.write_text('2500')
+        print('Set fans to quiet preset (2500 RPM)')
+    elif preset == 'balanced':
+        for t in targets:
+            t.write_text('3500')
+        print('Set fans to balanced preset (3500 RPM)')
+    elif preset == 'max':
+        for t in targets:
+            t.write_text('5000')
+        print('Set fans to max cooling (5000 RPM)')
+    else:
+        raise ValueError('Unknown fan preset: ' + preset)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='cmd')
+    sub.add_parser('status')
+    
+    p_lim = sub.add_parser('set-charge-limit')
+    p_lim.add_argument('limit', type=int)
+
+    p_fan = sub.add_parser('set-fan-preset')
+    p_fan.add_argument('preset', choices=['auto', 'quiet', 'balanced', 'max'])
+
+    args = parser.parse_args()
+    if args.cmd == 'status' or not args.cmd:
+        print(json.dumps(get_status(), indent=2))
+    elif args.cmd == 'set-charge-limit':
+        set_charge_limit(args.limit)
+    elif args.cmd == 'set-fan-preset':
+        set_fan_preset(args.preset)
+
+
+if __name__ == '__main__':
+    main()

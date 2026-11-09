@@ -1,0 +1,10 @@
+post_install() {
+  /usr/libexec/t2-dsp/package-actions configure
+}
+post_upgrade() {
+  post_install
+}
+pre_remove() {
+  /usr/libexec/t2-dsp/package-actions removed
+  printf '%s\n' 't2-dsp: Reboot after removal to restore the original audio card ID and routing.'
+}

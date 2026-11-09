@@ -1,20 +1,21 @@
-<p align="center">
-  <img src="assets/kait2en-fedora.jpeg" alt="KAIT2EN logo" width="720">
-</p>
+# T2 Omarchy
 
-# KAIT2EN Fedora
+Independent Arch Linux / Omarchy integration based on
+[KaiT2en-Fedora](https://github.com/kaiT2en/KaiT2en-Fedora), preserving upstream
+history, source attribution and component licenses. Not an official KaiT2en,
+Omarchy or Apple release; no upstream endorsement is implied.
 
-KAIT2EN brings cutting edge T2 Mac support to stock Fedora using DKMS modules.
-You will receive kernel updates directly from Fedora and the latest T2 modules from us.
+This fork collects the local DSP audio port, native hardware packages,
+Omarchy update hooks, guarded hardware validation tools and T2 Control Center.
 
-[Docs](https://kait2en.org/documentation.html) |
-[Blog](https://kait2en.org/blog.html) |
-[Community](#community) |
-[Contributing](#contributing)
+## Arch / Omarchy installation
 
-## Install
+See [the integration guide](packaging/arch/README.md) for build order,
+installation, hardware-specific limits and verification.
+Do not run the Fedora installer on Omarchy.
 
-Follow the [installation guide](https://kait2en.org/documentation.html#overview).
+Upstream Fedora documentation remains at
+[kait2en.org](https://kait2en.org/documentation.html).
 
 ## Community
 

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=T2 Control Center
+Comment=Manage Apple T2 GPU power, fans, battery charge limits and hardware encoding
+Exec=t2center %f
+Icon=t2center
+Terminal=false
+Categories=Settings;HardwareSettings;System;
+StartupWMClass=t2center

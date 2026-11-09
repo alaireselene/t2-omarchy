@@ -1,0 +1,179 @@
+#!/bin/sh
+# gpu-amd-dpm-low -- guarded, topology-aware AMD dGPU DPM controller for the
+# MacBookPro16,1 Intel-primary routing configuration. Runs as ROOT from
+# gpu-amd-dpm-low.service (boot), the systemd system-sleep resume hook, a udev
+# hotplug rule, and a periodic reconcile timer. Non-interactive; never prompts.
+#
+#   apply    : evaluate topology and set the correct DPM level, waiting up to 30s
+#              at boot for the AMD DRM node + routing to settle.
+#   hotplug  : same evaluation, single immediate pass, NO wait (safe for udev RUN,
+#              which kills long-running programs). Fires on display plug/unplug.
+#   poll     : like hotplug but QUIET (logs only on an actual change). Run by the
+#              safety-net timer to reconcile transitions the kernel did NOT emit a
+#              uevent for -- e.g. a passive DP->VGA adapter has no HPD line, so its
+#              disconnect is only visible by re-reading the connector status.
+#   auto     : force =auto. Identity guards only -- deliberately does NOT require
+#              Intel-primary, so teardown/rollback always restores the default.
+#   status   : print the current level and whether an AMD external is connected.
+#
+# Topology policy (the whole point of "topology-aware"):
+#   * Intel owns the boot display (boot_vga=1) AND no AMD-wired external display
+#     is connected  -> AMD is a pure offload renderer nobody scans out, so cap it
+#     to "low" for power saving (~53% less loaded power; see Documentation=).
+#   * An AMD-wired external display IS connected (card2 DP/HDMI) -> back OFF to
+#     "auto". force_igd only muxes the INTERNAL panel to Intel; external ports
+#     still route through AMD, so crippling AMD clocks could underflow/degrade a
+#     real external (esp. high-bandwidth 4K/high-refresh or under load).
+#
+# Fail-safe: on ANY unmet guard (wrong machine, wrong GPU, AMD is boot_vga, node
+# missing, or no write permission -- e.g. run as a normal user) it changes nothing
+# and exits 0. It never fails boot and never writes on the wrong machine.
+# Evidence for the cap: ~/.local/state/gpu-power-exp2/baseline-dpm-auto-load.txt
+set -u
+
+# The isolated cold-boot trial owns GPU runtime PM; never stack this cap on it.
+case " $(cat /proc/cmdline) " in
+	*" kait2en.trial=1 "*) exit 0 ;;
+esac
+
+INTEL_PCI=0000:00:02.0
+AMD_PCI=0000:03:00.0
+TAG=gpu-amd-dpm-low
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || true; printf '%s\n' "$*"; }
+rd()  { cat "$1" 2>/dev/null; }
+
+# QUIET=1 (poll mode) suppresses no-op/fail-safe logging so a 30s cadence is silent
+# unless the level actually changes. Always bound (set -u).
+QUIET=0
+
+# Resolve the AMD card node + DPM control via the stable PCI path (card numbering
+# can swap across reboots, so never hard-code cardN). Sets amd_card/DPM.
+amd_card=
+DPM=
+resolve_amd_dpm() {
+	amd_card=
+	DPM=
+	local_c=
+	for local_c in "/sys/bus/pci/devices/$AMD_PCI/drm/"card*; do
+		[ -d "$local_c" ] && amd_card=$(basename "$local_c") && break
+	done
+	[ -n "$amd_card" ] || return 1
+	DPM="/sys/class/drm/$amd_card/device/power_dpm_force_performance_level"
+	[ -e "$DPM" ] || { DPM=; return 1; }
+	return 0
+}
+
+# True if a monitor is physically connected to an AMD (card2) EXTERNAL output.
+# eDP-* is excluded on purpose: card2-eDP-2 is the internal-panel phantom that we
+# deliberately keep disabled, and it reads "connected" at sysfs level -- matching
+# it would pin us to auto forever and defeat the power saving.
+amd_external_connected() {
+	[ -n "$amd_card" ] || return 1
+	conn=
+	base=
+	cname=
+	for conn in "/sys/class/drm/$amd_card"-*; do
+		[ -e "$conn/status" ] || continue
+		base=$(basename "$conn")
+		cname=${base#"$amd_card"-}
+		case "$cname" in
+			eDP-*) continue ;;                            # internal panel / phantom
+			DP-* | HDMI-* | DisplayPort-* | DVI-* | VGA-*) ;;  # external connector types
+			*) continue ;;
+		esac
+		[ "$(rd "$conn/status")" = "connected" ] && return 0
+	done
+	return 1
+}
+
+# Routing is "ready" when the AMD node is present, the control is writable, and
+# Intel (not AMD) owns the boot display. Used by both apply (in a wait loop) and
+# hotplug (once).
+routing_ready() {
+	resolve_amd_dpm || return 1
+	[ -w "$DPM" ] || return 1
+	[ "$(rd "/sys/bus/pci/devices/$INTEL_PCI/boot_vga")" = "1" ] || return 1
+	[ "$(rd "/sys/bus/pci/devices/$AMD_PCI/boot_vga")" = "0" ] || return 1
+	return 0
+}
+
+# Set DPM to $1 with a reason in $2; idempotent, verifies readback, restores prev
+# on mismatch. Caller must have established routing_ready.
+set_dpm() {
+	target="$1"
+	reason="$2"
+	prev=$(rd "$DPM")
+	if [ "$prev" = "$target" ]; then
+		[ "$QUIET" = "1" ] || log "$amd_card DPM already '$target' ($reason); no-op"
+		return 0
+	fi
+	printf '%s\n' "$target" >"$DPM" 2>/dev/null || { log "FAILED to write '$target' to $DPM (prev='$prev')"; return 0; }
+	new=$(rd "$DPM")
+	if [ "$new" = "$target" ]; then
+		log "$amd_card DPM '$prev' -> '$target' (readback verified); $reason"
+	else
+		log "$amd_card DPM readback='$new' (wanted '$target'); restoring '$prev'"
+		printf '%s\n' "$prev" >"$DPM" 2>/dev/null || true
+	fi
+	return 0
+}
+
+mode="${1:-apply}"
+case "$mode" in
+	apply | hotplug | poll | auto | status) ;;
+	*) log "usage: $0 [apply|hotplug|poll|auto|status]"; exit 2 ;;
+esac
+[ "$mode" = "poll" ] && QUIET=1
+
+# Identity guards: stable PCI identities only; inert on any other machine.
+[ "$(rd /sys/class/dmi/id/product_name)" = "MacBookPro16,1" ] || { log "not MacBookPro16,1; no-op"; exit 0; }
+[ "$(rd "/sys/bus/pci/devices/$INTEL_PCI/vendor")" = "0x8086" ] || { log "Intel vendor mismatch; no-op"; exit 0; }
+[ "$(rd "/sys/bus/pci/devices/$INTEL_PCI/device")" = "0x3e9b" ] || { log "Intel device mismatch; no-op"; exit 0; }
+[ "$(rd "/sys/bus/pci/devices/$AMD_PCI/vendor")" = "0x1002" ] || { log "AMD vendor mismatch; no-op"; exit 0; }
+[ "$(rd "/sys/bus/pci/devices/$AMD_PCI/device")" = "0x7340" ] || { log "AMD device mismatch; no-op"; exit 0; }
+
+if [ "$mode" = "status" ]; then
+	if resolve_amd_dpm; then
+		if amd_external_connected; then ext="AMD external CONNECTED (policy: auto)"; else ext="no AMD external (policy: low)"; fi
+		log "$amd_card DPM=$(rd "$DPM"); $ext"
+	else
+		log "no AMD DRM/DPM node present"
+	fi
+	exit 0
+fi
+
+# auto: restore unconditionally (identity-guarded). Used by ExecStop/rollback and
+# safe to call even when routing is inactive.
+if [ "$mode" = "auto" ]; then
+	if ! resolve_amd_dpm; then log "no AMD DRM/DPM node present; nothing to restore"; exit 0; fi
+	if [ ! -w "$DPM" ]; then log "$DPM not writable (not root?); cannot restore auto"; exit 0; fi
+	set_dpm auto "explicit restore"
+	exit 0
+fi
+
+# apply / hotplug / poll: establish readiness (only apply waits; hotplug+poll take
+# a single immediate pass), then set the level the topology calls for.
+ready=0
+if [ "$mode" = "apply" ]; then
+	i=0
+	while [ "$i" -lt 30 ]; do
+		routing_ready && { ready=1; break; }
+		i=$((i + 1))
+		sleep 1
+	done
+else
+	routing_ready && ready=1
+fi
+
+if [ "$ready" != "1" ]; then
+	[ "$QUIET" = "1" ] || log "AMD DRM/DPM not ready, not writable, or Intel not primary (boot_vga) ($mode); NOT changing DPM (fail-safe)"
+	exit 0
+fi
+
+if amd_external_connected; then
+	set_dpm auto "AMD-wired external display connected -> full clocks (back-off)"
+else
+	set_dpm low "Intel-primary, no AMD-wired external -> cap AMD offload renderer for power saving"
+fi
+exit 0
