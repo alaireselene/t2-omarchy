@@ -1,0 +1,4 @@
+# Intel-first GPU routing for MacBookPro16,1.
+# Sourced by uwsm prepare-env as POSIX sh before Hyprland starts.
+# Identity and Intel boot-display guards are in gpu-aq-drm-devices.
+[ -f "${HOME}/.local/bin/gpu-aq-drm-devices" ] && . "${HOME}/.local/bin/gpu-aq-drm-devices"

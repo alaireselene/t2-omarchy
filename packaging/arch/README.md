@@ -156,3 +156,59 @@ physical headphone/display hotplug, Touch ID enrollment, AVE success, battery
 calibration safety or complete cross-OS firmware persistence. Build outputs,
 package archives, recordings, fingerprint data, local boot menus, disk UUIDs,
 firmware backups, runtime logs and private trial inputs are intentionally absent.
+
+## Additional manually installed integration
+
+The recovered desktop plugin is exported in `omarchy/plugins/sonnt.t2/`.
+Copy that directory under `~/.config/omarchy/plugins/`, preserving its ID, and
+add `{"id": "sonnt.t2"}` to the desired existing `bar.layout` section in
+`~/.config/omarchy/shell.json`. Do not replace the rest of the shell config.
+The Apple-icon panel shows live hardware telemetry, fan presets and charge
+controls and launches `t2center`. Install the control-center package first.
+The plugin is exported unchanged; it was not reloaded or visually re-tested
+as part of publication.
+
+Both exported hooks also serve the original `post-boot.d` event: install copies
+of `90-kait2en-audio` and `90-kait2en-hardware` there under the same activation
+conditions described above. The original boot and update hook contents matched.
+
+`omarchy/gpu-aq-drm-devices` is sourced, not executed. Install it in
+`~/.local/bin/` and merge the source line from `omarchy/uwsm/env-hyprland` into
+the existing uwsm environment file. It checks the model, PCI IDs and Intel boot
+ownership, exports Intel first and keeps AMD as a secondary compositor device
+when available. This preserves external-display detection without restarting
+Hyprland. The final boot-argument fragment is exported separately under
+`omarchy/limine-entry-tool/gpu-igd.conf`; review it before installing under
+`/etc/limine-entry-tool.d/` and rebuilding any boot image.
+
+The power-tools recipe now installs both original upstream wordmark assets at
+the paths those upstream GTK apps require. Without them, the apps can abort
+on startup. They are upstream attribution assets, not this fork's branding.
+
+The AVE recipe now packages the locally used native service, including
+`UMask=0000` and `Group=root`. **Security tradeoff:** the zero umask can create
+world-readable/writable files or sockets unless the daemon explicitly narrows
+their permissions. This preserves the prior local AVE permission fix, not a
+claim that the service is hardened for multiuser machines. Review the service
+and its created objects before enabling it on a shared system.
+
+`omarchy/pam-fingerprint.auth` contains only the two intended authentication
+rules, not snapshots of `/etc/pam.d/sudo` or `/etc/pam.d/polkit-1`. Back up and
+review both PAM stacks, keep an authenticated recovery terminal open, and
+insert those rules before the existing auth rules without deleting the existing
+password fallback. The Omarchy closed-lid helper skips fingerprint auth when
+the lid is closed. This is opt-in: no PAM files are modified by package install.
+
+Historical local hardware evidence, not re-run during publication: AMD
+encoding followed by D3cold and charge stop/restoration passed; a 60-frame
+1080p30 T2 HEVC MP4 was verified. Touch ID enrollment/binding was observed,
+but successful PAM fingerprint authentication was not demonstrated.
+**Suspend/resume did not pass**: the trial entered deep suspend, then a fresh
+boot and a long-power-button shutdown were recorded. It remains an unresolved
+deployment risk, not a validated feature.
+
+Publication checks also staged the AVE and power-tools package functions using
+the existing real build outputs: the AVE binary, native service and Sidecar
+DKMS source were present, and both GTK wordmark assets matched the installed
+upstream originals. The plugin manifest/entrypoint and POSIX compositor
+environment were checked without modifying the running shell or hardware.

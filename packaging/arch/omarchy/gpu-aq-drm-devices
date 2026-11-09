@@ -1,0 +1,61 @@
+# Sets AQ_DRM_DEVICES for Aquamarine/Hyprland on a MacBookPro16,1 with
+# Intel-primary routing and the coordinated KaiT2en GMUX runtime-PM stack.
+#
+# Keep Intel first and include AMD whenever its DRM card exists, so external
+# displays can appear without restarting the compositor. The patched stack
+# permits runtime suspend while AMD is idle.
+#
+# Sourced by ~/.config/uwsm/env-hyprland (POSIX sh) before Hyprland starts.
+# Exports nothing unless every identity/routing guard passes, so the stock
+# Aquamarine behavior (enumerate all DRM devices) is the failure mode.
+
+gpu_aq_rd() {
+	cat "$1" 2>/dev/null
+}
+
+gpu_aq_card() {
+	# $1 = PCI address; prints the first cardN under its drm directory
+	for gpu_aq_c in "/sys/bus/pci/devices/$1/drm/"card*; do
+		if [ -d "$gpu_aq_c" ]; then
+			basename "$gpu_aq_c"
+			return 0
+		fi
+	done
+	return 1
+}
+
+gpu_aq_select() {
+	gpu_aq_intel=0000:00:02.0
+	gpu_aq_amd=0000:03:00.0
+
+	# Machine and device identity guards (stable PCI identities only)
+	[ "$(gpu_aq_rd /sys/class/dmi/id/product_name)" = "MacBookPro16,1" ] || return 0
+	[ "$(gpu_aq_rd "/sys/bus/pci/devices/$gpu_aq_intel/vendor")" = "0x8086" ] || return 0
+	[ "$(gpu_aq_rd "/sys/bus/pci/devices/$gpu_aq_intel/device")" = "0x3e9b" ] || return 0
+	[ "$(gpu_aq_rd "/sys/bus/pci/devices/$gpu_aq_amd/vendor")" = "0x1002" ] || return 0
+	[ "$(gpu_aq_rd "/sys/bus/pci/devices/$gpu_aq_amd/device")" = "0x7340" ] || return 0
+
+	# Routing guard: act only while Intel actually owns the boot display.
+	# Inert (no export) when Intel does not own the boot display.
+	[ "$(gpu_aq_rd "/sys/bus/pci/devices/$gpu_aq_intel/boot_vga")" = "1" ] || return 0
+
+	gpu_aq_icard=$(gpu_aq_card "$gpu_aq_intel") || return 0
+	[ -c "/dev/dri/$gpu_aq_icard" ] || return 0
+
+	# Intel is primary renderer & internal panel scanout.
+	# Append AMD secondary KMS output device so external displays on USB-C
+	# ports are recognized immediately when plugged in.
+	# With KaiT2en's GMUX runtime PM, the inactive phantom eDP-2 on AMD is
+	# properly suppressed, and amdgpu enters D3cold automatically when no
+	# external display is connected.
+	if gpu_aq_acard=$(gpu_aq_card "$gpu_aq_amd") && [ -c "/dev/dri/$gpu_aq_acard" ]; then
+		AQ_DRM_DEVICES="/dev/dri/$gpu_aq_icard:/dev/dri/$gpu_aq_acard"
+	else
+		AQ_DRM_DEVICES="/dev/dri/$gpu_aq_icard"
+	fi
+
+	export AQ_DRM_DEVICES
+}
+
+gpu_aq_select
+unset -f gpu_aq_select gpu_aq_card gpu_aq_rd

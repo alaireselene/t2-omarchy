@@ -1,0 +1,4 @@
+# Insert before existing auth rules in /etc/pam.d/sudo and /etc/pam.d/polkit-1.
+# Closed lid skips fingerprint authentication; keep the existing password fallback.
+auth      [success=1 default=ignore] pam_exec.so quiet /usr/bin/omarchy-hw-laptop-closed
+auth      sufficient pam_fprintd.so

@@ -38,6 +38,8 @@ package() {
   for unit in t2-fancontrol t2-smc-gaugingd t2-zonepowerd; do
     install -Dm644 "$srcdir/$unit.service" "$pkgdir/usr/lib/systemd/system/$unit.service"
   done
+  install -Dm644 "$srcdir/kait2en/assets/kait2en-app-logo.png" "$pkgdir/usr/local/share/kait2en/kait2en-wordmark.png"
+  install -Dm644 "$srcdir/kait2en/assets/kait2en-app-logo-light.png" "$pkgdir/usr/local/share/kait2en/kait2en-wordmark-light.png"
   install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
   install -Dm644 "$srcdir/kait2en/LICENSES/GPL-3.0-or-later.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-3.0-or-later.txt"
 }

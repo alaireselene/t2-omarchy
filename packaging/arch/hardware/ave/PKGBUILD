@@ -7,8 +7,8 @@ url='https://github.com/kaiT2en/KaiT2en-Fedora'
 license=('GPL-3.0-or-later')
 depends=('dkms' 'ffmpeg')
 makedepends=('git' 'cargo')
-source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160')
-sha256sums=('SKIP')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160' 'kait2en-t2-remote.service')
+sha256sums=('SKIP' 'SKIP')
 
 build() {
   cd "$srcdir/kait2en/t2-services/t2-ave"
@@ -20,9 +20,7 @@ package() {
   install -Dm755 target/release/t2remote "$pkgdir/usr/bin/t2remote"
 
   # Systemd service
-  install -d "$pkgdir/usr/lib/systemd/system"
-  sed 's|@BINDIR@|/usr/bin|g' integration/systemd/kait2en-t2-remote.service > "$pkgdir/usr/lib/systemd/system/kait2en-t2-remote.service"
-  chmod 644 "$pkgdir/usr/lib/systemd/system/kait2en-t2-remote.service"
+  install -Dm644 "$srcdir/kait2en-t2-remote.service" "$pkgdir/usr/lib/systemd/system/kait2en-t2-remote.service"
 
   # Sidecar DKMS module
   local dkms_dest="$pkgdir/usr/src/t2bce_sidecar-$pkgver"
