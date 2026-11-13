@@ -181,9 +181,9 @@ Hyprland. The final boot-argument fragment is exported separately under
 `omarchy/limine-entry-tool/gpu-igd.conf`; review it before installing under
 `/etc/limine-entry-tool.d/` and rebuilding any boot image.
 
-The power-tools recipe now installs both original upstream wordmark assets at
-the paths those upstream GTK apps require. Without them, the apps can abort
-on startup. They are upstream attribution assets, not this fork's branding.
+The power-tools recipe removes the upstream wordmark widgets before compiling
+the three GTK applications. It does not install the upstream logo assets.
+Original source, copyright and license attribution are preserved.
 
 The AVE recipe now packages the locally used native service, including
 `UMask=0000` and `Group=root`. **Security tradeoff:** the zero umask can create

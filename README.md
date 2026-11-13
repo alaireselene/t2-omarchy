@@ -12,6 +12,24 @@ fork-specific changes include the Arch packaging and Omarchy integration.
 This fork collects the local DSP audio port, native hardware packages,
 Omarchy update hooks, guarded hardware validation tools and T2 Control Center.
 
+## Independent project identity
+
+This fork is **t2-patches-for-omarchy**:
+[github.com/alaireselene/t2-patches-for-omarchy](https://github.com/alaireselene/t2-patches-for-omarchy).
+It is not affiliated with or endorsed by KaiT2en, Omarchy, the Omacom
+Foundation or Apple. "For Omarchy" describes compatibility, not affiliation.
+
+KaiT2en is named only to identify the upstream source and preserve attribution;
+its name and logos are not this fork's branding. Existing upstream technical
+identifiers are retained where required for compatibility. The Arch power-tools
+recipe removes the upstream GTK wordmarks, and the inherited branded Fedora
+installer and website publication jobs run only in the upstream repository.
+Those upstream sources and their original notices remain available for reference.
+
+The upstream restriction in [TRADEMARK.md](TRADEMARK.md) is preserved unchanged.
+It withholds brand and endorsement permission; it does not remove permissions
+granted by the applicable code licenses or prohibit compatibility with Omarchy.
+
 ## Arch / Omarchy installation
 
 See [the integration guide](packaging/arch/README.md) for build order,
@@ -21,22 +39,16 @@ Do not run the Fedora installer on Omarchy.
 Upstream Fedora documentation remains at
 [kait2en.org](https://kait2en.org/documentation.html).
 
-## Community
+## Upstream community
 
-Join the KAIT2EN community on [Discord](https://discord.gg/AGfjRk4ydj) or on
+For discussion of the upstream project, see its community on [Discord](https://discord.gg/AGfjRk4ydj) or on
 [Matrix](https://matrix.to/#/%23kait2en:matrix.org).
 
 ## Contributing
 
-Contributions are welcome, especially when they move KAIT2EN fixes closer to
-clean upstream Linux support.
-
-Please keep changes and PR descriptions focused.
-**We will reject PRs and Issues when we notice we are talking to AI!**
-At least talk to us in person.
-We are not interested in workarounds.
-We are not interested in major AI refactories.
-There is a distinct difference between making broken things work and fixing things.
+Keep contributions focused on this independent patch set. Report fork-specific
+issues in this repository; do not imply upstream authors support these changes.
+Preserve original copyright, license and attribution notices when adapting code.
 
 ## License
 

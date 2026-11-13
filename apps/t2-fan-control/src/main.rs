@@ -1,3 +1,4 @@
+// Modified 2026-11-14: remove the upstream wordmark from this independent fork.
 mod config;
 mod control;
 mod error;
@@ -35,31 +36,6 @@ use ipc::{DaemonState, Request};
 use signal_hook::consts::signal::SIGHUP;
 use sysfs::{discover_fans, discover_temperature_sources, FanEndpoint, TemperatureSnapshot, TemperatureSource};
 
-fn kait2en_brand() -> DrawingArea {
-    // White type for dark surfaces, dark type for light ones. Without the
-    // light file the white one is used.
-    let dark = gtk4::gdk_pixbuf::Pixbuf::from_file("/usr/local/share/kait2en/kait2en-wordmark.png")
-        .expect("failed to load kait2en wordmark");
-    let light = gtk4::gdk_pixbuf::Pixbuf::from_file("/usr/local/share/kait2en/kait2en-wordmark-light.png")
-        .unwrap_or_else(|_| dark.clone());
-    let brand = DrawingArea::new();
-    brand.set_content_width(80); brand.set_content_height(21); brand.set_size_request(80, 21);
-    brand.set_draw_func(move |_area, context, width, height| {
-        let pixbuf = if adw::StyleManager::default().is_dark() { &dark } else { &light };
-        let scale = f64::min(width as f64 / pixbuf.width() as f64, height as f64 / pixbuf.height() as f64);
-        let _ = context.save();
-        context.translate((width as f64 - pixbuf.width() as f64 * scale) / 2.0, (height as f64 - pixbuf.height() as f64 * scale) / 2.0);
-        context.scale(scale, scale); context.set_source_pixbuf(&pixbuf, 0.0, 0.0);
-        let _ = context.paint(); let _ = context.restore();
-    });
-    let weak = brand.downgrade();
-    adw::StyleManager::default().connect_dark_notify(move |_| {
-        if let Some(brand) = weak.upgrade() {
-            brand.queue_draw();
-        }
-    });
-    brand
-}
 
 const APP_ID: &str = "org.t2fancontrol.gtk";
 const APP_VERSION: &str = "0.08";
@@ -648,10 +624,6 @@ fn build_ui(app: &Application) {
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new("Fan Control", "")));
-    let brand = kait2en_brand();
-    brand.set_margin_start(10);
-    brand.set_margin_end(10);
-    header.pack_start(&brand);
     ui.control_switch.set_valign(Align::Center);
     header.pack_end(&ui.control_switch);
     window.set_titlebar(Some(&header));

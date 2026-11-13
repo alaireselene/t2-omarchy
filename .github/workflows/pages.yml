@@ -21,6 +21,8 @@ concurrency:
 
 jobs:
   build:
+    # Keep the inherited branded site as source, not a fork-published artifact.
+    if: github.repository == 'kaiT2en/KaiT2en-Fedora'
     runs-on: ubuntu-24.04
 
     steps:
@@ -47,8 +49,7 @@ jobs:
 
   deploy:
     needs: build
-    # A fork has no deploy key and must not publish kait2en.org. It still gets
-    # the build job above as a check, and `build.py --serve` for a local preview.
+    # Neither the branded site nor kait2en.org is published by a fork.
     if: >-
       github.event_name != 'pull_request'
       && github.repository == 'kaiT2en/KaiT2en-Fedora'

@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   build:
+    # This independent fork must not distribute a KaiT2en-branded installer.
+    if: github.repository == 'kaiT2en/KaiT2en-Fedora'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -34,7 +36,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.repository == 'kaiT2en/KaiT2en-Fedora' && startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
