@@ -1,4 +1,4 @@
-// Modified 2026-11-14: remove the upstream wordmark from this independent fork.
+// Modified 2026-11-14: independent branding and displayed upstream legal notices.
 mod config;
 mod control;
 mod error;
@@ -624,6 +624,39 @@ fn build_ui(app: &Application) {
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new("Fan Control", "")));
+    let about = gtk4::Button::with_label("About");
+    about.set_tooltip_text(Some("Author credits, license and fork modifications"));
+    about.connect_clicked(|button| {
+        let parent = button.root().and_downcast::<gtk4::Window>()
+            .expect("About button must belong to a window");
+        let dialog = gtk4::AboutDialog::builder()
+            .transient_for(&parent)
+            .modal(true)
+            .destroy_with_parent(true)
+            .title("About / Legal Notices")
+            .program_name("T2 Fan Control")
+            .version(APP_VERSION)
+            .copyright(include_str!("../LICENSE").split("\n\n").next().unwrap())
+            .comments(concat!(
+                "Modified from KaiT2en-Fedora cf64a1f since 2026-11-09.\n",
+                "Legal-notice UI added 2026-11-14.\n",
+                "Independent T2 patches for Omarchy; no upstream endorsement.\n",
+                "This program comes with ABSOLUTELY NO WARRANTY.\n",
+                "Redistribution is permitted under GPL-3.0-or-later, ",
+                "with the original attribution terms."
+            ))
+            .website("https://github.com/kaiT2en/KaiT2en-Fedora")
+            .website_label("Upstream source")
+            .license(concat!(
+                include_str!("../LICENSE"),
+                "\n\n",
+                include_str!("../../../LICENSES/GPL-3.0-or-later.txt")
+            ))
+            .wrap_license(true)
+            .build();
+        dialog.present();
+    });
+    header.pack_start(&about);
     ui.control_switch.set_valign(Align::Center);
     header.pack_end(&ui.control_switch);
     window.set_titlebar(Some(&header));

@@ -30,6 +30,12 @@ The upstream restriction in [TRADEMARK.md](TRADEMARK.md) is preserved unchanged.
 It withholds brand and endorsement permission; it does not remove permissions
 granted by the applicable code licenses or prohibit compatibility with Omarchy.
 
+On 2026-11-14, the three GTK power tools gained an **About** button displaying
+their original author copyrights, unchanged application license notices, full
+GPLv3 text and separate dated fork modifications. These notices retain the
+upstream attribution requirement without restoring its logo or suggesting
+endorsement. Original per-application license notices also ship in the package.
+
 ## Arch / Omarchy installation
 
 See [the integration guide](packaging/arch/README.md) for build order,

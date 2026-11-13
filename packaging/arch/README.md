@@ -184,6 +184,10 @@ Hyprland. The final boot-argument fragment is exported separately under
 The power-tools recipe removes the upstream wordmark widgets before compiling
 the three GTK applications. It does not install the upstream logo assets.
 Original source, copyright and license attribution are preserved.
+Each header has an **About** button opening the original author credits and
+legal notices, the full GPLv3 text and dated independent-fork modifications.
+The package also includes each application's unchanged notice as
+`/usr/share/licenses/kait2en-power-tools/<project>.LICENSE`.
 
 The AVE recipe now packages the locally used native service, including
 `UMask=0000` and `Group=root`. **Security tradeoff:** the zero umask can create

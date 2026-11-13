@@ -1,6 +1,6 @@
 pkgname=kait2en-power-tools
 pkgver=20261108
-pkgrel=2
+pkgrel=3
 pkgdesc='Apple T2 fan control, battery calibration and SMC zone power management'
 arch=('x86_64')
 url='https://github.com/kaiT2en/KaiT2en-Fedora'
@@ -9,12 +9,12 @@ depends=('gtk4' 'libadwaita' 'polkit' 'util-linux' 'kait2en-battery-dkms')
 makedepends=('git' 'cargo' 'pkgconf')
 options=('!debug')
 source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160' 't2-fancontrol.service' 't2-smc-gaugingd.service' 't2-zonepowerd.service'
-        'remove-upstream-wordmarks.patch')
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'b930f6a576fc6b9c40df6cd3dc864bdc90a3db860c422affb6492730e1b1e6a1')
+        'independent-ui-notices.patch')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' '780274d421e970f486bffc21e809c9f8a4585aca97f81ccbe60f78407ce87a49')
 
 prepare() {
   cd "$srcdir/kait2en"
-  patch --batch --forward -p1 -i "$srcdir/remove-upstream-wordmarks.patch"
+  patch --batch --forward -p1 -i "$srcdir/independent-ui-notices.patch"
 }
 
 build() {
@@ -40,6 +40,7 @@ package() {
     install -Dm644 "$srcdir/kait2en/apps/$project/$appid.desktop" "$pkgdir/usr/share/applications/$appid.desktop"
     sed -i "s|/usr/local/bin/|/usr/bin/|g" "$pkgdir/usr/share/applications/$appid.desktop"
     install -Dm644 "$srcdir/kait2en/apps/$project/assets/icons/hicolor/scalable/apps/$appid.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/$appid.svg"
+    install -Dm644 "$srcdir/kait2en/apps/$project/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/$project.LICENSE"
   done
   for unit in t2-fancontrol t2-smc-gaugingd t2-zonepowerd; do
     install -Dm644 "$srcdir/$unit.service" "$pkgdir/usr/lib/systemd/system/$unit.service"
