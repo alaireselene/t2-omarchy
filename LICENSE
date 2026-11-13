@@ -1,8 +1,13 @@
 Copyright (C) 2026 KaiT2en contributors
 
+Modified from KaiT2en-Fedora cf64a1f since 2026-11-09.
+
 Licensed under the GNU General Public License, version 3 or later
 (GPL-3.0-or-later). The full text is in the repository at
 LICENSES/GPL-3.0-or-later.txt.
 
-Kernel modules below modules/ are GPL-2.0, see their headers. Components with
-their own license keep it, see LICENSING.md.
+Kernel modules below modules/ and t2-services/t2-ave/kernel/ are GPL-2.0,
+subject to their file headers. The full GPL-2.0 text is included at
+LICENSES/GPL-2.0-only.txt.
+
+Components with their own license keep it, see LICENSING.md.

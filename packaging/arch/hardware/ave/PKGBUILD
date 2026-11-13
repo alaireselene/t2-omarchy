@@ -1,14 +1,15 @@
 pkgname=kait2en-ave
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Apple T2 AVE and Sidecar hardware video encoder service and drivers'
 arch=('x86_64')
 url='https://github.com/kaiT2en/KaiT2en-Fedora'
-license=('GPL-3.0-or-later')
+license=('GPL-3.0-or-later' 'GPL-2.0-only')
 depends=('dkms' 'ffmpeg')
 makedepends=('git' 'cargo')
-source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160' 'kait2en-t2-remote.service')
-sha256sums=('SKIP' 'SKIP')
+source=('kait2en::git+https://github.com/kaiT2en/KaiT2en-Fedora.git#commit=cf64a1fcee7cfb790c74847c8356965aa42e2160' 'kait2en-t2-remote.service'
+        'GPL-2.0-only.txt::https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GPL-2.0-only.txt')
+sha256sums=('SKIP' 'SKIP' 'aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3')
 
 build() {
   cd "$srcdir/kait2en/t2-services/t2-ave"
@@ -27,4 +28,7 @@ package() {
   install -d "$dkms_dest"
   install -m644 kernel/t2bce_sidecar/*.c kernel/t2bce_sidecar/*.h kernel/t2bce_sidecar/Makefile "$dkms_dest/"
   printf 'PACKAGE_NAME="t2bce_sidecar"\nPACKAGE_VERSION="%s"\nMAKE[0]="make KDIR=/lib/modules/${kernelver}/build KVER=${kernelver}"\nBUILT_MODULE_NAME[0]="t2bce_sidecar"\nDEST_MODULE_LOCATION[0]="/updates/dkms"\nAUTOINSTALL="yes"\n' "$pkgver" > "$dkms_dest/dkms.conf"
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+  install -Dm644 "$srcdir/kait2en/LICENSES/GPL-3.0-or-later.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-3.0-or-later.txt"
+  install -Dm644 "$srcdir/GPL-2.0-only.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-2.0-only.txt"
 }

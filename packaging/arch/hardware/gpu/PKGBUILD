@@ -1,6 +1,6 @@
 pkgname=kait2en-hybrid-gpu
 pkgver=7.2.11
-pkgrel=1
+pkgrel=2
 pkgdesc='KAIT2EN GMUX runtime PM and MacBookPro16,1 GPU fixes for linux-t2 7.2.11.arch1-1'
 arch=('x86_64')
 url='https://github.com/kaiT2en/KaiT2en-Fedora'
@@ -9,8 +9,10 @@ depends=('linux-t2=7.2.11.arch1-1' 'kait2en-gmux-dkms')
 makedepends=('linux-t2-headers=7.2.11.arch1-1' 'libelf' 'pahole')
 options=('!debug')
 _kver=7.2.11-arch1-Watanare-T2-1-t2
-source=("https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz" 'gpu-runtime-7.2.11.patch')
-sha256sums=('fd0fc479f983a8c05313f13e9c36330fe6651cf725396748c40d5cd93fa1e6a4' '3412b4da9e2e44b72b57d1d003d0112eb55166391de42631a4bcf09cce739552')
+source=("https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz" 'gpu-runtime-7.2.11.patch'
+        'GPL-2.0-only.txt::https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GPL-2.0-only.txt')
+sha256sums=('fd0fc479f983a8c05313f13e9c36330fe6651cf725396748c40d5cd93fa1e6a4' '3412b4da9e2e44b72b57d1d003d0112eb55166391de42631a4bcf09cce739552'
+            'aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3')
 
 prepare() {
   cd "$srcdir/linux-$pkgver"
@@ -28,4 +30,5 @@ package() {
   install -Dm644 "$tree/drivers/gpu/drm/amd/amdgpu/amdgpu.ko" "$dest/amdgpu.ko"
   install -Dm644 "$tree/sound/hda/controllers/snd-hda-intel.ko" "$dest/snd-hda-intel.ko"
   install -Dm644 "$srcdir/gpu-runtime-7.2.11.patch" "$pkgdir/usr/share/doc/$pkgname/gpu-runtime-7.2.11.patch"
+  install -Dm644 "$srcdir/GPL-2.0-only.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-2.0-only.txt"
 }

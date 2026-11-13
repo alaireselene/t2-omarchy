@@ -4,17 +4,26 @@ Per-file `SPDX-License-Identifier` headers are authoritative; this table is the
 overview. Already-released versions stay under the license they were published
 under, a license choice only applies going forward.
 
+This independent fork was modified from KaiT2en-Fedora cf64a1f since
+2026-11-09. Original copyright, attribution and per-file license notices
+remain in effect. Adding license texts does not relicense any component.
+
 ## GPL-2.0 (kernel modules)
 
 Kernel modules under `modules/` and `t2-services/t2-ave/kernel/` stay GPL-2.0 as the
 kernel requires. This includes `t2bce_*`, `t2ave` (in the BCE stack), `t2sep`,
 `t2smc`, `t2smp` and the others.
 
+Full text: [LICENSES/GPL-2.0-only.txt](LICENSES/GPL-2.0-only.txt).
+The same GPL version 2 text accompanies components whose headers allow later
+versions; their original license grants are unchanged.
+
 ## GPL-3.0-or-later
 
-Everything that is not a kernel module and not vendored third-party code:
+KaiT2en-derived userspace and project material:
 
-- all programs and tools below `apps/`
+- KaiT2en-derived programs and tools below `apps/`; the independently
+  licensed `apps/t2center/` retains its MIT license
 - userspace programs and integration below `t2-services/`
 - `t2-services/shared/protocols/t2-bridgexpc`, `t2-services/t2-touchid/protocols/t2-biometrickit`
 - host-side DSP integration and profiles below `dsp/` (each profile
@@ -22,7 +31,7 @@ Everything that is not a kernel module and not vendored third-party code:
   the installed files)
 - the root scripts, howto docs and project text (root `LICENSE`)
 
-Full text: `LICENSES/GPL-3.0-or-later.txt`.
+Full text: [LICENSES/GPL-3.0-or-later.txt](LICENSES/GPL-3.0-or-later.txt).
 
 ## Attribution (GPL-3.0 section 7b)
 

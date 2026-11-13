@@ -1,9 +1,13 @@
-# T2 Omarchy
+# Apple T2 patches for Omarchy
 
 Independent Arch Linux / Omarchy integration based on
 [KaiT2en-Fedora](https://github.com/kaiT2en/KaiT2en-Fedora), preserving upstream
 history, source attribution and component licenses. Not an official KaiT2en,
 Omarchy or Apple release; no upstream endorsement is implied.
+
+Modified from KaiT2en-Fedora cf64a1f since 2026-11-09.
+The upstream source is pinned at `cf64a1fcee7cfb790c74847c8356965aa42e2160`;
+fork-specific changes include the Arch packaging and Omarchy integration.
 
 This fork collects the local DSP audio port, native hardware packages,
 Omarchy update hooks, guarded hardware validation tools and T2 Control Center.
@@ -36,15 +40,18 @@ There is a distinct difference between making broken things work and fixing thin
 
 ## License
 
-KAIT2EN-owned scripts, howto documents, project text and helper code are MIT
-licensed.
+The applicable licenses and original author notices are preserved per component.
+Complete license texts are included in this repository:
 
-Kernel modules, apps and third-party tools may include code with different
-origins. Those components keep their own licenses in their directories.
+- [GNU GPL version 2](LICENSES/GPL-2.0-only.txt) for the kernel components,
+  subject to each file's license notice.
+- [GNU GPL version 3](LICENSES/GPL-3.0-or-later.txt) for the GPL-3.0-or-later
+  programs, protocols, DSP profiles, scripts and documentation.
+- Independently licensed and third-party components retain their own notices.
 
-The kernel modules are GPL-2.0; everything else KAIT2EN writes, apps, protocols,
-audio DSP profiles and scripts, is GPL-3.0-or-later. The full breakdown is in
-[LICENSING.md](LICENSING.md).
+See [LICENSING.md](LICENSING.md) for the component breakdown and preserved
+attribution requirements. On 2026-11-14, this fork added the missing GPL-2.0
+text and corrected Arch package delivery of the full GPL license texts.
 
 The code licenses do not grant the KAIT2EN name or logo. Their use, and what
 the project stands for, are described in [TRADEMARK.md](TRADEMARK.md) and

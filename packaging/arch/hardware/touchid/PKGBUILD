@@ -1,6 +1,6 @@
 pkgname=kait2en-touchid
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Bridge Apple T2 Touch ID sensor to fprintd'
 arch=('x86_64')
 url='https://github.com/kaiT2en/KaiT2en-Fedora'
@@ -27,4 +27,6 @@ package() {
   install -Dm644 integration/fprintd/fprintd-kait2en-t2-touchid.conf "$pkgdir/usr/lib/systemd/system/fprintd.service.d/kait2en-t2-touchid.conf"
   install -Dm644 integration/dbus/org.kait2en.TouchId.conf "$pkgdir/usr/share/dbus-1/system.d/org.kait2en.TouchId.conf"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+  install -Dm644 "$srcdir/kait2en/LICENSES/GPL-3.0-or-later.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-3.0-or-later.txt"
 }

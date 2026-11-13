@@ -1,6 +1,6 @@
 pkgname=kait2en-touchbar
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Dark-first custom Touch Bar daemon and gestures for Apple T2 MacBooks'
 arch=('x86_64')
 url='https://github.com/kaiT2en/KaiT2en-Fedora'
@@ -31,4 +31,6 @@ package() {
 
   install -Dm644 integration/udev/99-zz-kait2en-touchbar.rules "$pkgdir/usr/lib/udev/rules.d/99-zz-kait2en-touchbar.rules"
   install -Dm644 THIRD-PARTY-NOTICES.md "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
+  install -Dm644 "$srcdir/kait2en/LICENSING.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSING.md"
+  install -Dm644 "$srcdir/kait2en/LICENSES/GPL-3.0-or-later.txt" "$pkgdir/usr/share/licenses/$pkgname/GPL-3.0-or-later.txt"
 }
